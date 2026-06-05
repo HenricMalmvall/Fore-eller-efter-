@@ -1673,28 +1673,32 @@ function exportToGitHub() {
   fetch(window.location.href)
     .then(r => r.text())
     .then(html => {
-      // Use indexOf/substring instead of regex to avoid baking broken regex into the file
-      function replaceOnce(src, startMarker, endMarker, replacement) {
-        const s = src.indexOf(startMarker);
-        const e = src.indexOf(endMarker, s) + endMarker.length;
-        if (s === -1 || e === -1) return src;
-        return src.substring(0, s) + replacement + src.substring(e);
-      }
-
-      // Encode data safely — escape </script> so it doesn't break the HTML
-      function safeStr(obj) {
-        return JSON.stringify(obj).split('<\/script>').join('<\/' + 'script>');
+      // Helper: replace an attribute value in the baked-data div
+      function setAttr(src, attr, value) {
+        // Escape the value for use in an HTML attribute
+        const escaped = value
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        const marker = attr + '="';
+        const s = src.indexOf('<div id="baked-data"');
+        if (s === -1) return src;
+        const end = src.indexOf('</div>', s);
+        const block = src.substring(s, end);
+        const attrStart = block.indexOf(marker);
+        if (attrStart === -1) return src;
+        const valStart = s + attrStart + marker.length;
+        const valEnd = src.indexOf('"', valStart);
+        return src.substring(0, valStart) + escaped + src.substring(valEnd);
       }
 
       let newHtml = html;
-      newHtml = replaceOnce(newHtml,
-        'const BAKED_SETTINGS = {', '};',
-        'const BAKED_SETTINGS = ' + safeStr({title, badge, avatar}) + ';'
-      );
-      newHtml = replaceOnce(newHtml,
-        'const BAKED_CARDS = ', ';',
-        'const BAKED_CARDS = ' + safeStr(cards) + ';'
-      );
+      newHtml = setAttr(newHtml, 'data-title', title);
+      newHtml = setAttr(newHtml, 'data-badge', badge);
+      newHtml = setAttr(newHtml, 'data-has-avatar', avatar ? 'true' : 'false');
+      newHtml = setAttr(newHtml, 'data-avatar', avatar || '');
+      newHtml = setAttr(newHtml, 'data-cards', JSON.stringify(cards));
 
       const blob = new Blob([newHtml], { type: 'text/html;charset=utf-8' });
       const a = document.createElement('a');
@@ -1704,7 +1708,7 @@ function exportToGitHub() {
       URL.revokeObjectURL(a.href);
     })
     .catch(() => {
-      alert('Exportera måste göras via GitHub-länken, inte en lokal fil.');
+      alert('Tips: Exportera via GitHub-länken för bästa resultat. Lokala filer kan också fungera om du öppnar dem direkt i webbläsaren.');
     });
 }
 
@@ -2257,36 +2261,6 @@ initAvatar();
 renderCustomCardsList();
 updateDeckBadge();
 
-// ── BAKED SETTINGS (populated by Export to GitHub function) ──
-const BAKED_SETTINGS = {
-  title: null,
-  badge: null,
-  avatar: null
-};
-const BAKED_CARDS = null; // Will be replaced with array on export
-
-// ── LOAD BAKED DATA ON START ──────────────────────────────────
-(function loadBakedData() {
-  if (BAKED_SETTINGS.title) {
-    const t = document.getElementById('game-title-input');
-    if (t) t.value = BAKED_SETTINGS.title;
-  }
-  if (BAKED_SETTINGS.badge) {
-    const b = document.getElementById('badge-input');
-    if (b) b.value = BAKED_SETTINGS.badge;
-    localStorage.setItem('ndd_badge', BAKED_SETTINGS.badge);
-  }
-  if (BAKED_SETTINGS.avatar) {
-    localStorage.setItem('ndd_avatar', BAKED_SETTINGS.avatar);
-  }
-  if (BAKED_CARDS && BAKED_CARDS.length > 0) {
-    // Only load baked cards if localStorage is empty or matches baked version
-    const stored = localStorage.getItem('ndd_custom_cards');
-    if (!stored || stored === '[]') {
-      localStorage.setItem('ndd_custom_cards', JSON.stringify(BAKED_CARDS));
-    }
-  }
-})();
 
 applyTheme('wedding'); localStorage.setItem('ndd_theme','wedding');
 _renderPicker_ndd();
@@ -2299,6 +2273,49 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }
+</script>
+
+<!-- BAKED DATA: populated by Export to GitHub -->
+<div id="baked-data" style="display:none"
+  data-title=""
+  data-badge=""
+  data-has-avatar="false"
+  data-avatar=""
+  data-cards="[]"
+></div>
+
+<script>
+(function loadBakedData() {
+  const el = document.getElementById('baked-data');
+  if (!el) return;
+  const title  = el.getAttribute('data-title');
+  const badge  = el.getAttribute('data-badge');
+  const hasAvatar = el.getAttribute('data-has-avatar') === 'true';
+  const avatar = el.getAttribute('data-avatar');
+  const cardsJson = el.getAttribute('data-cards');
+
+  if (title) {
+    const t = document.getElementById('game-title-input');
+    if (t) t.value = title;
+  }
+  if (badge) {
+    const b = document.getElementById('badge-input');
+    if (b) b.value = badge;
+    localStorage.setItem('ndd_badge', badge);
+  }
+  if (hasAvatar && avatar) {
+    localStorage.setItem('ndd_avatar', avatar);
+  }
+  try {
+    const cards = JSON.parse(cardsJson);
+    if (cards && cards.length > 0) {
+      const stored = localStorage.getItem('ndd_custom_cards');
+      if (!stored || stored === '[]') {
+        localStorage.setItem('ndd_custom_cards', JSON.stringify(cards));
+      }
+    }
+  } catch(e) {}
+})();
 </script>
 </body>
 </html>
