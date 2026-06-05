@@ -1670,38 +1670,30 @@ function exportToGitHub() {
   const avatar = localStorage.getItem('ndd_avatar') || null;
   const cards  = JSON.parse(localStorage.getItem('ndd_custom_cards') || '[]');
 
-  // Fetch the original HTML source file (not the live DOM)
   fetch(window.location.href)
     .then(r => r.text())
     .then(html => {
-      // Safely encode data as JSON inside a script tag
-      // Use a split trick to prevent </script> from breaking the tag
-      const safeJson = s => JSON.stringify(s).replace(/<\/script>/gi, '<\/scr"+"ipt>');
+      // Use indexOf/substring instead of regex to avoid baking broken regex into the file
+      function replaceOnce(src, startMarker, endMarker, replacement) {
+        const s = src.indexOf(startMarker);
+        const e = src.indexOf(endMarker, s) + endMarker.length;
+        if (s === -1 || e === -1) return src;
+        return src.substring(0, s) + replacement + src.substring(e);
+      }
+
+      // Encode data safely — escape </script> so it doesn't break the HTML
+      function safeStr(obj) {
+        return JSON.stringify(obj).split('<\/script>').join('<\/' + 'script>');
+      }
 
       let newHtml = html;
-
-      // Replace BAKED_SETTINGS
-      newHtml = newHtml.replace(
-        /const BAKED_SETTINGS = \{[\s\S]*?\};/,
-        'const BAKED_SETTINGS = ' + safeJson({title, badge, avatar}) + ';'
+      newHtml = replaceOnce(newHtml,
+        'const BAKED_SETTINGS = {', '};',
+        'const BAKED_SETTINGS = ' + safeStr({title, badge, avatar}) + ';'
       );
-
-      // Replace BAKED_CARDS
-      newHtml = newHtml.replace(
-        /const BAKED_CARDS = (?:null|\[[\s\S]*?\]);/,
-        'const BAKED_CARDS = ' + safeJson(cards) + ';'
-      );
-
-      // Pre-fill title input default value
-      newHtml = newHtml.replace(
-        /id="game-title-input" value="[^"]*"/,
-        'id="game-title-input" value="' + title.replace(/"/g, '&quot;') + '"'
-      );
-
-      // Pre-fill badge input value
-      newHtml = newHtml.replace(
-        /(id="badge-input"[^>]*?)(?:value="[^"]*")?( style=)/,
-        '$1value="' + badge.replace(/"/g, '&quot;') + '" $2'
+      newHtml = replaceOnce(newHtml,
+        'const BAKED_CARDS = ', ';',
+        'const BAKED_CARDS = ' + safeStr(cards) + ';'
       );
 
       const blob = new Blob([newHtml], { type: 'text/html;charset=utf-8' });
@@ -1712,8 +1704,7 @@ function exportToGitHub() {
       URL.revokeObjectURL(a.href);
     })
     .catch(() => {
-      // Fallback: if fetch fails (e.g. opened as local file), warn user
-      alert('Exportera via GitHub-länken, inte lokal fil. Öppna spelet via https://henricmalmvall.github.io/Fore-eller-efter- och försök igen.');
+      alert('Exportera måste göras via GitHub-länken, inte en lokal fil.');
     });
 }
 
